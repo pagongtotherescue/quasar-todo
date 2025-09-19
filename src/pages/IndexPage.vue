@@ -1,65 +1,79 @@
 <template>
-<q-card-section>
-  <q-card class="q-pa-md" style="max-width: 600px; margin: auto;">
-  <div class="text-h6 text-center">Task Manager</div>
+  <q-card-section>
+    <q-card class="q-pa-md" style="max-width: 600px; margin: auto;">
+      <div class="text-h6 text-center">Task Manager</div>
 
-  <div class="row items-center q-gutter-sm">
-    <q-input
-      v-model="newTask"
-      label="New Task"
-      outlined
-      @keyup.enter="addTask"
-      class="q-flex"
-      style="flex: 2"
-    />
-    <q-btn
-      label="Add Task"
-      color="primary"
-      @click="addTask"
-    />
-  </div>
+      <!-- Add new task -->
+      <div class="row items-center q-gutter-sm">
+        <q-input
+          v-model="newTask"
+          label="New Task"
+          outlined
+          @keyup.enter="addTask"
+          class="q-flex"
+          style="flex: 2"
+        />
+        <q-btn label="Add Task" color="primary" @click="addTask" />
+      </div>
 
-  <br>
-        <q-separator />
-  </br>
+      <br />
+      <q-separator />
+      <br />
+
+      <!-- Task list -->
       <q-card-section>
         <div v-if="loading" class="text-center q-mt-md">Loading tasks...</div>
         <q-list v-else>
           <q-item v-for="task in tasks" :key="task.id" clickable>
             <q-item-section>
-              <div v-if="editId !== task.id">{{ task.title }}</div>
+              <!-- Normal view -->
+              <div v-if="!task.editing">{{ task.title }}</div>
+
+              <!-- Edit mode -->
               <q-input
                 v-else
-                v-model="editTitle"
+                v-model="task.tempTitle"
                 dense
                 outlined
-                @keyup.enter="updateTask(task.id)"
+                @keyup.enter="updateTask(task)"
               />
             </q-item-section>
+
             <q-item-section side>
+              <!-- Edit button -->
               <q-btn
                 dense
                 flat
                 icon="edit"
                 color="orange"
                 @click="startEdit(task)"
-                v-if="editId !== task.id"
+                v-if="!task.editing"
               />
+
+              <!-- Save button -->
               <q-btn
                 dense
                 flat
                 icon="check"
                 color="green"
-                @click="updateTask(task.id)"
-                v-if="editId === task.id"
+                @click="updateTask(task)"
+                v-if="task.editing"
               />
-              <q-btn dense flat icon="delete" color="red" @click="deleteTask(task.id)" />
+
+              <!-- Delete button -->
+              <q-btn
+                dense
+                flat
+                icon="delete"
+                color="red"
+                @click="deleteTask(task)"
+              />
             </q-item-section>
           </q-item>
         </q-list>
       </q-card-section>
-</q-card>
-</q-card-section>
+    </q-card>
+  </q-card-section>
 </template>
 
 <script>
@@ -70,9 +84,8 @@ export default {
     return {
       tasks: [],
       newTask: "",
-      editId: null,
-      editTitle: "",
       loading: false,
+      localId: 1000, // counter for locally created tasks
     };
   },
   methods: {
@@ -80,8 +93,15 @@ export default {
     async fetchTasks() {
       this.loading = true;
       try {
-        const res = await axios.get("https://jsonplaceholder.typicode.com/todos?_limit=10");
-        this.tasks = res.data;
+        const res = await axios.get(
+          "https://jsonplaceholder.typicode.com/todos?_limit=10"
+        );
+        // Add edit fields to each task
+        this.tasks = res.data.map((t) => ({
+          ...t,
+          editing: false,
+          tempTitle: t.title,
+        }));
       } catch (error) {
         console.error("Error fetching tasks:", error);
       } finally {
@@ -93,44 +113,66 @@ export default {
     async addTask() {
       if (!this.newTask.trim()) return;
       try {
-        const res = await axios.post("https://jsonplaceholder.typicode.com/todos", {
-          title: this.newTask,
-          completed: false,
-        });
-        this.tasks.unshift(res.data);
+        const res = await axios.post(
+          "https://jsonplaceholder.typicode.com/todos",
+          {
+            title: this.newTask,
+            completed: false,
+          }
+        );
+        // Add to local list with a unique local ID
+        const newTask = {
+          ...res.data,
+          id: this.localId++, // unique local ID
+          editing: false,
+          tempTitle: res.data.title,
+        };
+        this.tasks.unshift(newTask);
         this.newTask = "";
       } catch (error) {
         console.error("Error adding task:", error);
       }
     },
 
-    // Edit
+    // Edit mode
     startEdit(task) {
-      this.editId = task.id;
-      this.editTitle = task.title;
+      task.editing = true;
+      task.tempTitle = task.title;
     },
 
     // Update task
-    async updateTask(id) {
-      if (!this.editTitle.trim()) return;
+    async updateTask(task) {
+      if (!task.tempTitle.trim()) return;
       try {
-        const res = await axios.put(`https://jsonplaceholder.typicode.com/todos/${id}`, {
-          title: this.editTitle,
-        });
-        const index = this.tasks.findIndex((t) => t.id === id);
-        this.tasks[index] = res.data;
-        this.editId = null;
-        this.editTitle = "";
+        if (task.id <= 200) {
+          // API task → update via server
+          await axios.put(
+            `https://jsonplaceholder.typicode.com/todos/${task.id}`,
+            {
+              ...task,
+              title: task.tempTitle,
+            }
+          );
+        }
+        // Always update locally
+        task.title = task.tempTitle;
+        task.editing = false;
       } catch (error) {
         console.error("Error updating task:", error);
       }
     },
 
     // Delete task
-    async deleteTask(id) {
+    async deleteTask(task) {
       try {
-        await axios.delete(`https://jsonplaceholder.typicode.com/todos/${id}`);
-        this.tasks = this.tasks.filter((t) => t.id !== id);
+        if (task.id <= 200) {
+          // API task → delete via server
+          await axios.delete(
+            `https://jsonplaceholder.typicode.com/todos/${task.id}`
+          );
+        }
+        // Always update locally
+        this.tasks = this.tasks.filter((t) => t.id !== task.id);
       } catch (error) {
         console.error("Error deleting task:", error);
       }
@@ -141,13 +183,3 @@ export default {
   },
 };
 </script>
-
-<style>
-.q-page {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  min-height: 100vh;
-  padding-top: 50px;
-}
-</style>
