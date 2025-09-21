@@ -89,19 +89,37 @@ export default {
     };
   },
   methods: {
+    // Save tasks to localStorage
+    saveToLocal() {
+      localStorage.setItem("tasks", JSON.stringify(this.tasks));
+    },
+
+    // Load tasks from localStorage
+    loadFromLocal() {
+      const saved = localStorage.getItem("tasks");
+      if (saved) {
+        this.tasks = JSON.parse(saved);
+        return true;
+      }
+      return false;
+    },
+
     // Get
     async fetchTasks() {
       this.loading = true;
       try {
-        const res = await axios.get(
-          "https://jsonplaceholder.typicode.com/todos?_limit=10"
-        );
-        // Add edit fields to each task
-        this.tasks = res.data.map((t) => ({
-          ...t,
-          editing: false,
-          tempTitle: t.title,
-        }));
+        // Only fetch from API if localStorage is empty
+        if (!this.loadFromLocal()) {
+          const res = await axios.get(
+            "https://jsonplaceholder.typicode.com/todos?_limit=10"
+          );
+          this.tasks = res.data.map((t) => ({
+            ...t,
+            editing: false,
+            tempTitle: t.title,
+          }));
+          this.saveToLocal();
+        }
       } catch (error) {
         console.error("Error fetching tasks:", error);
       } finally {
@@ -120,7 +138,6 @@ export default {
             completed: false,
           }
         );
-        // Add to local list with a unique local ID
         const newTask = {
           ...res.data,
           id: this.localId++, // unique local ID
@@ -129,6 +146,7 @@ export default {
         };
         this.tasks.unshift(newTask);
         this.newTask = "";
+        this.saveToLocal();
       } catch (error) {
         console.error("Error adding task:", error);
       }
@@ -145,7 +163,6 @@ export default {
       if (!task.tempTitle.trim()) return;
       try {
         if (task.id <= 200) {
-          // API task → update via server
           await axios.put(
             `https://jsonplaceholder.typicode.com/todos/${task.id}`,
             {
@@ -154,9 +171,9 @@ export default {
             }
           );
         }
-        // Always update locally
         task.title = task.tempTitle;
         task.editing = false;
+        this.saveToLocal();
       } catch (error) {
         console.error("Error updating task:", error);
       }
@@ -166,13 +183,12 @@ export default {
     async deleteTask(task) {
       try {
         if (task.id <= 200) {
-          // API task → delete via server
           await axios.delete(
             `https://jsonplaceholder.typicode.com/todos/${task.id}`
           );
         }
-        // Always update locally
         this.tasks = this.tasks.filter((t) => t.id !== task.id);
+        this.saveToLocal();
       } catch (error) {
         console.error("Error deleting task:", error);
       }
